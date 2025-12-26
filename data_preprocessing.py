@@ -7,11 +7,21 @@ import pandas as pd
 import numpy as np
 from datetime import datetime
 from typing import Dict, Any, Tuple, Optional
-from utils.data_utils import validate_csv_columns, classify_region
+from utils.data_utils import validate_csv_columns, classify_region, classify_india_region
 
 
 # Expected column mappings for different data formats
 COLUMN_MAPPINGS = {
+    'india_smart_meters': {
+        'consumer_id': ['Consumer_ID', 'consumer_id', 'ConsumerID', 'Meter_Number', 'meter_id', 'id'],
+        'timestamp': ['DateTime', 'timestamp', 'datetime', 'Reading_Time', 'date_time'],
+        'consumption': ['KWH', 'kwh', 'consumption', 'Units', 'energy', 'KWH/hh', 'consumption_kWh'],
+        'state': ['State', 'state', 'STATE'],
+        'discom': ['DISCOM', 'discom', 'Utility', 'Distribution_Company'],
+        'city': ['City', 'city', 'District', 'Location'],
+        'consumer_type': ['Consumer_Type', 'consumer_type', 'Category', 'Tariff_Type'],
+        'tariff': ['Tariff_Category', 'tariff', 'Tariff']
+    },
     'london_smart_meters': {
         'consumer_id': ['LCLid', 'consumer_id', 'id', 'meter_id'],
         'timestamp': ['DateTime', 'timestamp', 'datetime', 'date_time'],
@@ -21,9 +31,35 @@ COLUMN_MAPPINGS = {
 }
 
 
+def detect_data_format(df: pd.DataFrame) -> str:
+    """
+    Detect whether the data is India or London format.
+    
+    Args:
+        df: Input DataFrame
+        
+    Returns:
+        Format string: 'india_smart_meters' or 'london_smart_meters'
+    """
+    columns_lower = [col.lower() for col in df.columns]
+    
+    # Check for India-specific columns
+    india_indicators = ['state', 'discom', 'consumer_type', 'tariff_category', 'city']
+    india_matches = sum(1 for ind in india_indicators if any(ind in col for col in columns_lower))
+    
+    # Check for London-specific columns
+    london_indicators = ['acorn', 'lclid', 'stdortou']
+    london_matches = sum(1 for ind in london_indicators if any(ind in col for col in columns_lower))
+    
+    if india_matches > london_matches:
+        return 'india_smart_meters'
+    return 'london_smart_meters'
+
+
 def standardize_columns(df: pd.DataFrame) -> pd.DataFrame:
     """
     Standardize column names to expected format.
+    Auto-detects India vs London format.
     
     Args:
         df: Input DataFrame
@@ -34,13 +70,18 @@ def standardize_columns(df: pd.DataFrame) -> pd.DataFrame:
     df_copy = df.copy()
     column_map = {}
     
-    for standard_name, possible_names in COLUMN_MAPPINGS['london_smart_meters'].items():
+    # Detect format
+    data_format = detect_data_format(df)
+    
+    # Apply mappings from detected format
+    for standard_name, possible_names in COLUMN_MAPPINGS[data_format].items():
         for col in df_copy.columns:
             if col.lower().strip() in [p.lower() for p in possible_names]:
                 column_map[col] = standard_name
                 break
     
     df_copy = df_copy.rename(columns=column_map)
+    df_copy['_data_format'] = data_format  # Store format for later use
     return df_copy
 
 
@@ -92,11 +133,23 @@ def clean_data(df: pd.DataFrame) -> Tuple[pd.DataFrame, Dict[str, Any]]:
         df_clean['timestamp'] = pd.to_datetime(df_clean['timestamp'], errors='coerce')
         df_clean = df_clean.dropna(subset=['timestamp'])
     
-    # Add region classification
-    if 'acorn_group' in df_clean.columns:
-        df_clean['region'] = df_clean['acorn_group'].apply(classify_region)
+    # Add region classification based on data format
+    data_format = df_clean.get('_data_format', pd.Series(['london_smart_meters'])).iloc[0] if '_data_format' in df_clean.columns else 'london_smart_meters'
+    
+    if data_format == 'india_smart_meters':
+        # Use State or DISCOM for India data
+        if 'state' in df_clean.columns:
+            df_clean['region'] = df_clean['state'].apply(classify_india_region)
+        elif 'discom' in df_clean.columns:
+            df_clean['region'] = df_clean['discom']
+        else:
+            df_clean['region'] = 'Unknown'
     else:
-        df_clean['region'] = 'Zone F'
+        # Use ACORN for London data
+        if 'acorn_group' in df_clean.columns:
+            df_clean['region'] = df_clean['acorn_group'].apply(classify_region)
+        else:
+            df_clean['region'] = 'Zone F'
     
     report['final_rows'] = len(df_clean)
     report['cleaning_ratio'] = report['final_rows'] / report['original_rows'] if report['original_rows'] > 0 else 0

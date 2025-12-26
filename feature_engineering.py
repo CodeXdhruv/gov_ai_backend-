@@ -208,6 +208,7 @@ def summarize_features(df: pd.DataFrame) -> Dict[str, Any]:
 def identify_feature_profiles(df: pd.DataFrame) -> pd.DataFrame:
     """
     Identify consumption profiles based on feature patterns.
+    Includes India-specific profiles for agricultural, industrial, and commercial consumers.
     
     Args:
         df: DataFrame with all features
@@ -218,20 +219,44 @@ def identify_feature_profiles(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     
     # Define profiles based on consumption patterns
+    # Base profiles
     conditions = [
         # Night shifter: High night usage
         (df.get('night_day_ratio', 0) > 1.5),
         # Weekend heavy: High weekend usage
         (df.get('weekend_weekday_ratio', 0) > 1.5),
-        # Low consumer: Very low average usage
+        # Low consumer: Very low average usage (potential theft)
         (df.get('avg_consumption', 999) < df.get('avg_consumption', 0).quantile(0.1)),
         # High consumer: Very high average usage
         (df.get('avg_consumption', 0) > df.get('avg_consumption', 0).quantile(0.9)),
-        # Irregular: High variability
+        # Irregular: High variability (suspicious pattern)
         (df.get('cv_consumption', 0) > df.get('cv_consumption', 0).quantile(0.9))
     ]
     
     profiles = ['Night Shifter', 'Weekend Heavy', 'Low Consumer', 'High Consumer', 'Irregular']
+    
+    # India-specific profiles (check consumer_type if available)
+    if 'consumer_type' in df.columns:
+        # Agricultural pump user: High early morning/evening usage
+        agr_condition = (df['consumer_type'].str.upper() == 'AGR') | (df['consumer_type'].str.contains('Agri', case=False, na=False))
+        conditions.append(agr_condition)
+        profiles.append('Agricultural Pump')
+        
+        # Industrial: Shift-based consumption
+        ind_condition = (df['consumer_type'].str.upper() == 'IND') | (df['consumer_type'].str.contains('Industrial', case=False, na=False))
+        conditions.append(ind_condition)
+        profiles.append('Industrial')
+        
+        # Commercial: Shop/office hours
+        com_condition = (df['consumer_type'].str.upper() == 'COM') | (df['consumer_type'].str.contains('Commercial', case=False, na=False))
+        conditions.append(com_condition)
+        profiles.append('Commercial')
+    
+    # Summer AC heavy: Check for seasonal pattern if available
+    if 'peak_usage_ratio' in df.columns:
+        ac_condition = (df.get('peak_usage_ratio', 0) > 0.6) & (df.get('avg_consumption', 0) > df.get('avg_consumption', 0).quantile(0.7))
+        conditions.append(ac_condition)
+        profiles.append('Summer AC Heavy')
     
     df['consumption_profile'] = 'Normal'
     for condition, profile in zip(conditions, profiles):
@@ -241,3 +266,4 @@ def identify_feature_profiles(df: pd.DataFrame) -> pd.DataFrame:
             pass
     
     return df
+

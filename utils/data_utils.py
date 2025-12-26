@@ -11,7 +11,7 @@ import pandas as pd
 import numpy as np
 
 
-# Define regions/zones for classification
+# Define regions/zones for classification (London ACORN-based)
 ZONES = {
     'Zone A': ['ACORN-A', 'ACORN-B', 'ACORN-C'],
     'Zone B': ['ACORN-D', 'ACORN-E', 'ACORN-F'],
@@ -19,6 +19,28 @@ ZONES = {
     'Zone D': ['ACORN-J', 'ACORN-K', 'ACORN-L'],
     'Zone E': ['ACORN-M', 'ACORN-N', 'ACORN-O', 'ACORN-P', 'ACORN-Q'],
     'Zone F': ['ACORN-U', 'Affluent', 'Comfortable', 'Adversity']
+}
+
+# India state-based zones
+INDIA_ZONES = {
+    'North India': ['UP', 'DL', 'HR', 'PB', 'RJ', 'UK', 'HP', 'JK', 'CH', 'LD'],
+    'West India': ['MH', 'GJ', 'GO', 'DD', 'DN'],
+    'South India': ['KA', 'TN', 'KL', 'AP', 'TS', 'PY'],
+    'East India': ['WB', 'BR', 'JH', 'OR', 'AS', 'SK', 'TR', 'MN', 'NL', 'ML', 'MZ', 'AR'],
+    'Central India': ['MP', 'CG']
+}
+
+# Indian state full names mapping
+INDIA_STATE_NAMES = {
+    'UP': 'Uttar Pradesh', 'MH': 'Maharashtra', 'DL': 'Delhi', 'KA': 'Karnataka',
+    'GJ': 'Gujarat', 'TN': 'Tamil Nadu', 'WB': 'West Bengal', 'RJ': 'Rajasthan',
+    'MP': 'Madhya Pradesh', 'AP': 'Andhra Pradesh', 'TS': 'Telangana', 'KL': 'Kerala',
+    'BR': 'Bihar', 'HR': 'Haryana', 'PB': 'Punjab', 'OR': 'Odisha', 'AS': 'Assam',
+    'JH': 'Jharkhand', 'UK': 'Uttarakhand', 'HP': 'Himachal Pradesh', 'CG': 'Chhattisgarh',
+    'JK': 'Jammu & Kashmir', 'GO': 'Goa', 'TR': 'Tripura', 'MN': 'Manipur', 'ML': 'Meghalaya',
+    'NL': 'Nagaland', 'MZ': 'Mizoram', 'AR': 'Arunachal Pradesh', 'SK': 'Sikkim',
+    'CH': 'Chandigarh', 'PY': 'Puducherry', 'DD': 'Daman & Diu', 'DN': 'Dadra & Nagar Haveli',
+    'LD': 'Ladakh'
 }
 
 
@@ -43,7 +65,7 @@ def validate_csv_columns(df: pd.DataFrame, required_columns: List[str]) -> Dict[
 
 def classify_region(acorn_group: str) -> str:
     """
-    Classify ACORN group into a zone/region.
+    Classify ACORN group into a zone/region (London data).
     
     Args:
         acorn_group: ACORN classification string
@@ -62,6 +84,51 @@ def classify_region(acorn_group: str) -> str:
                 return zone
     
     return 'Zone F'  # Default zone
+
+
+def classify_india_region(state_code: str) -> str:
+    """
+    Classify Indian state code into a regional zone.
+    
+    Args:
+        state_code: Indian state code (e.g., 'UP', 'MH', 'DL')
+        
+    Returns:
+        Regional zone (e.g., 'North India', 'South India')
+    """
+    if pd.isna(state_code) or state_code is None:
+        return 'Unknown'
+    
+    state_str = str(state_code).strip().upper()
+    
+    for zone, states in INDIA_ZONES.items():
+        if state_str in states:
+            return zone
+    
+    # If exact match not found, try partial match
+    for zone, states in INDIA_ZONES.items():
+        for state in states:
+            if state in state_str or state_str in state:
+                return zone
+    
+    return 'Unknown'
+
+
+def get_india_state_name(state_code: str) -> str:
+    """
+    Get full state name from state code.
+    
+    Args:
+        state_code: Indian state code (e.g., 'UP')
+        
+    Returns:
+        Full state name (e.g., 'Uttar Pradesh')
+    """
+    if pd.isna(state_code) or state_code is None:
+        return 'Unknown'
+    
+    state_str = str(state_code).strip().upper()
+    return INDIA_STATE_NAMES.get(state_str, state_str)
 
 
 def get_time_of_day(hour: int) -> str:
