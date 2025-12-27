@@ -118,6 +118,23 @@ app.add_middleware(
 )
 
 
+# Custom exception handler to ensure CORS headers on error responses
+@app.exception_handler(HTTPException)
+async def cors_exception_handler(request, exc: HTTPException):
+    """Add CORS headers to HTTPException responses."""
+    origin = request.headers.get("origin", "*")
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail},
+        headers={
+            "Access-Control-Allow-Origin": origin,
+            "Access-Control-Allow-Credentials": "true",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+            "Access-Control-Allow-Headers": "Authorization, Content-Type",
+        }
+    )
+
+
 # ============ PUBLIC ENDPOINTS ============
 
 @app.get("/")
