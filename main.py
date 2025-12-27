@@ -106,12 +106,19 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# CORS middleware
-CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:3001,http://localhost:3002").split(",")
+# CORS middleware - must list specific origins when using credentials
+# Cannot use wildcard "*" with allow_credentials=True (browsers block this)
+CORS_ORIGINS = os.getenv(
+    "CORS_ORIGINS", 
+    "http://localhost:3000,http://localhost:3001,http://localhost:3002,http://localhost:5173,https://gov-ai-energy.vercel.app"
+).split(",")
+
+# Clean up origins (strip whitespace)
+CORS_ORIGINS = [origin.strip() for origin in CORS_ORIGINS if origin.strip()]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=CORS_ORIGINS + ["*"],  # Allow configured + all for development
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -121,17 +128,48 @@ app.add_middleware(
 # Custom exception handler to ensure CORS headers on error responses
 @app.exception_handler(HTTPException)
 async def cors_exception_handler(request, exc: HTTPException):
-    """Add CORS headers to HTTPException responses."""
-    origin = request.headers.get("origin", "*")
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={"detail": exc.detail},
-        headers={
+    """Add CORS headers to HTTPException responses for allowed origins."""
+    origin = request.headers.get("origin", "")
+    
+    # Only add CORS headers for allowed origins
+    headers = {}
+    if origin in CORS_ORIGINS:
+        headers = {
             "Access-Control-Allow-Origin": origin,
             "Access-Control-Allow-Credentials": "true",
             "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
             "Access-Control-Allow-Headers": "Authorization, Content-Type",
         }
+    
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail},
+        headers=headers
+    )
+
+
+# Generic exception handler to catch all errors with CORS headers
+@app.exception_handler(Exception)
+async def generic_exception_handler(request, exc: Exception):
+    """Handle uncaught exceptions with CORS headers for debugging."""
+    origin = request.headers.get("origin", "")
+    
+    headers = {}
+    if origin in CORS_ORIGINS:
+        headers = {
+            "Access-Control-Allow-Origin": origin,
+            "Access-Control-Allow-Credentials": "true",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+            "Access-Control-Allow-Headers": "Authorization, Content-Type",
+        }
+    
+    # Log the error for debugging
+    print(f"Unhandled error: {type(exc).__name__}: {str(exc)}")
+    
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"Internal server error: {str(exc)}"},
+        headers=headers
     )
 
 
@@ -263,8 +301,9 @@ async def upload_file(
         data_store.upload_filename = file.filename
         data_store.current_user_id = current_user["id"]
         
-        # Generate preview (first 5 rows)
-        preview = df.head(5).to_dict('records')
+        # Generate preview (first 5 rows) - replace NaN with None for JSON compatibility
+        preview_df = df.head(5).replace({np.nan: None, float('inf'): None, float('-inf'): None})
+        preview = preview_df.to_dict('records')
         
         return {
             "status": "success",
